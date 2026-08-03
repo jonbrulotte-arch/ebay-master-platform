@@ -20,6 +20,7 @@ class Listing(Base):
     )
     marketplace: Mapped[str] = mapped_column(String(20), default="EBAY_US")
     ebay_item_id: Mapped[str | None] = mapped_column(String(50), unique=True, index=True)
+    ebay_offer_id: Mapped[str | None] = mapped_column(String(100))
     listing_type: Mapped[str] = mapped_column(String(20), default="FIXED_PRICE")
     status: Mapped[str] = mapped_column(String(20), default="DRAFT", index=True)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
