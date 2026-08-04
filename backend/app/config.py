@@ -26,6 +26,10 @@ class Settings(BaseSettings):
 
     fernet_key: str = ""
 
+    cors_origins: list[str] = ["http://localhost:3000"]
+    sentry_dsn: str = ""
+    environment: str = "development"
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 

@@ -1,4 +1,4 @@
-.PHONY: up down build migrate test lint seed
+.PHONY: up down build migrate test lint seed test-unit test-cov health
 
 up:
 	docker compose up -d
@@ -37,3 +37,16 @@ backend-shell:
 
 frontend-shell:
 	docker compose exec frontend sh
+
+test-unit:
+	docker compose exec backend pytest tests/test_services/ -v --tb=short
+
+test-cov:
+	docker compose exec backend pytest --cov=app --cov-report=term-missing -v
+
+health:
+	curl -s http://localhost:8000/health | python3 -m json.tool
+
+flower:
+	@echo "Celery Flower UI: http://localhost:5555"
+	@open http://localhost:5555 2>/dev/null || xdg-open http://localhost:5555 2>/dev/null || true

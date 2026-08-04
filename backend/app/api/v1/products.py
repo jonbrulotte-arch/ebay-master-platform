@@ -103,6 +103,7 @@ async def get_product(
     return product
 
 
+@router.patch("/{product_id}", response_model=ProductResponse)
 @router.put("/{product_id}", response_model=ProductResponse)
 async def update_product(
     product_id: uuid.UUID,
