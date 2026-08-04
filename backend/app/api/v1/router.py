@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1 import analytics, auth, ebay, export, inventory, listings, notifications, orders, pricing, products, suppliers
+from app.api.v1 import aliexpress, analytics, auth, ebay, export, inventory, listings, notifications, orders, pricing, products, suppliers
 
 api_router = APIRouter(prefix="/api/v1")
 
@@ -15,3 +15,4 @@ api_router.include_router(notifications.router)
 api_router.include_router(ebay.router)
 api_router.include_router(analytics.router)
 api_router.include_router(export.router)
+api_router.include_router(aliexpress.router)
