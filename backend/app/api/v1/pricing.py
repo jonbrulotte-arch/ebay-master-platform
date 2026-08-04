@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.exceptions import NotFoundError
-from app.models.fee_schedule import FeeSchedule
 from app.models.price_change_log import PriceChangeLog
 from app.models.pricing_rule import PricingRule
 from app.models.user import User
@@ -20,9 +19,63 @@ from app.schemas.pricing import (
     PricingRuleCreate,
     PricingRuleResponse,
     PricingRuleUpdate,
+    UserSettingsRequest,
+    UserSettingsResponse,
 )
+from app.services.pricing_service import ALL_CATEGORIES, calculate_fees, merge_user_settings
 
 router = APIRouter(prefix="/pricing", tags=["pricing"])
+
+
+@router.get("/categories", response_model=list[str])
+async def list_fee_categories(current_user: User = Depends(get_current_user)):
+    return ALL_CATEGORIES
+
+
+@router.get("/settings", response_model=UserSettingsResponse)
+async def get_user_settings(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    settings = merge_user_settings(current_user.settings)
+    return UserSettingsResponse(**settings)
+
+
+@router.put("/settings", response_model=UserSettingsResponse)
+async def update_user_settings(
+    req: UserSettingsRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    existing = dict(current_user.settings or {})
+    updates = req.model_dump(exclude_unset=True)
+    existing.update(updates)
+    current_user.settings = existing
+    db.add(current_user)
+    await db.flush()
+    await db.refresh(current_user)
+    settings = merge_user_settings(current_user.settings)
+    return UserSettingsResponse(**settings)
+
+
+@router.post("/fee-calculator", response_model=FeeCalculationResponse)
+async def calculate_fees_endpoint(
+    req: FeeCalculationRequest,
+    current_user: User = Depends(get_current_user),
+):
+    result = calculate_fees(
+        sold_price=Decimal(str(req.sold_price)),
+        item_cost=Decimal(str(req.item_cost)),
+        actual_shipping_cost=Decimal(str(req.actual_shipping_cost)),
+        store_level=req.store_level,
+        category_name=req.category_name,
+        shipping_charge_to_buyer=Decimal(str(req.shipping_charge_to_buyer)),
+        seller_discount_pct=Decimal(str(req.seller_discount_pct)),
+        promoted_rate=Decimal(str(req.promoted_rate)),
+        sales_tax_rate=Decimal(str(req.sales_tax_rate)),
+        is_top_rated_seller=req.is_top_rated_seller,
+    )
+    return FeeCalculationResponse(**{k: float(v) for k, v in result.items()})
 
 
 @router.get("/rules", response_model=list[PricingRuleResponse])
@@ -125,66 +178,4 @@ async def list_price_changes(
         page=page,
         page_size=page_size,
         total_pages=(total + page_size - 1) // page_size,
-    )
-
-
-@router.post("/fee-calculator", response_model=FeeCalculationResponse)
-async def calculate_fees(
-    req: FeeCalculationRequest,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    fvf_pct = Decimal("13.25")
-    pp_pct = Decimal("2.35")
-    pp_fixed = Decimal("0.25")
-    intl_pct = Decimal("1.65")
-
-    if req.category_id:
-        result = await db.execute(
-            select(FeeSchedule).where(
-                FeeSchedule.category_id == req.category_id,
-                FeeSchedule.marketplace == "EBAY_US",
-            ).order_by(FeeSchedule.effective_from.desc()).limit(1)
-        )
-        fee_schedule = result.scalar_one_or_none()
-        if fee_schedule:
-            fvf_pct = Decimal(str(fee_schedule.final_value_fee_pct))
-            pp_pct = Decimal(str(fee_schedule.payment_processing_pct))
-            pp_fixed = Decimal(str(fee_schedule.payment_processing_fixed))
-            intl_pct = Decimal(str(fee_schedule.international_fee_pct))
-
-    sale = Decimal(str(req.sale_price))
-    cogs = Decimal(str(req.cost_of_goods))
-    supplier_ship = Decimal(str(req.supplier_shipping_cost))
-    ship = Decimal(str(req.shipping_cost))
-
-    final_value_fee = sale * fvf_pct / 100
-    payment_fee = sale * pp_pct / 100 + pp_fixed
-    promoted_fee = (
-        sale * Decimal(str(req.promoted_listing_rate)) / 100
-        if req.promoted_listing_rate
-        else Decimal("0")
-    )
-    international_fee = sale * intl_pct / 100 if req.is_international else Decimal("0")
-
-    total_fees = final_value_fee + payment_fee + promoted_fee + international_fee
-    total_costs = cogs + supplier_ship + total_fees + ship
-    gross_profit = sale - total_costs
-    margin = (gross_profit / sale * 100) if sale > 0 else Decimal("0")
-    roi = (gross_profit / cogs * 100) if cogs > 0 else Decimal("0")
-
-    return FeeCalculationResponse(
-        sale_price=float(sale),
-        cost_of_goods=float(cogs),
-        supplier_shipping_cost=float(supplier_ship),
-        ebay_final_value_fee=float(final_value_fee.quantize(Decimal("0.01"))),
-        ebay_payment_processing_fee=float(payment_fee.quantize(Decimal("0.01"))),
-        ebay_promoted_listing_fee=float(promoted_fee.quantize(Decimal("0.01"))),
-        ebay_international_fee=float(international_fee.quantize(Decimal("0.01"))),
-        shipping_cost=float(ship),
-        total_fees=float(total_fees.quantize(Decimal("0.01"))),
-        total_costs=float(total_costs.quantize(Decimal("0.01"))),
-        gross_profit=float(gross_profit.quantize(Decimal("0.01"))),
-        profit_margin_pct=float(margin.quantize(Decimal("0.01"))),
-        roi_pct=float(roi.quantize(Decimal("0.01"))),
     )

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class PricingRuleCreate(BaseModel):
@@ -65,26 +65,66 @@ class PriceChangeLogResponse(BaseModel):
 
 
 class FeeCalculationRequest(BaseModel):
-    sale_price: float
-    category_id: str | None = None
-    promoted_listing_rate: float | None = None
-    is_international: bool = False
-    shipping_cost: float = 0
-    cost_of_goods: float = 0
-    supplier_shipping_cost: float = 0
+    sold_price: float
+    item_cost: float = 0.0
+    actual_shipping_cost: float = 0.0
+    store_level: str = "basic"
+    category_name: str = "All Other Categories"
+    shipping_charge_to_buyer: float = 0.0
+    seller_discount_pct: float = 0.0
+    promoted_rate: float = 0.0
+    sales_tax_rate: float = 0.0
+    is_top_rated_seller: bool = False
+
+    @field_validator("store_level")
+    @classmethod
+    def validate_store_level(cls, v: str) -> str:
+        valid = {"none", "starter", "basic", "premium", "anchor", "enterprise"}
+        if v.lower() not in valid:
+            raise ValueError(f"store_level must be one of {valid}")
+        return v.lower()
 
 
 class FeeCalculationResponse(BaseModel):
-    sale_price: float
-    cost_of_goods: float
-    supplier_shipping_cost: float
-    ebay_final_value_fee: float
-    ebay_payment_processing_fee: float
-    ebay_promoted_listing_fee: float
-    ebay_international_fee: float
-    shipping_cost: float
+    sold_price: float
+    seller_discount_amount: float
+    effective_sold_price: float
+    shipping_charge_to_buyer: float
+    pre_tax_total: float
+    sales_tax_amount: float
+    total_sale: float
+    final_value_fee: float
+    promoted_fee: float
     total_fees: float
-    total_costs: float
-    gross_profit: float
+    payout: float
+    item_cost: float
+    actual_shipping_cost: float
+    net_profit: float
     profit_margin_pct: float
     roi_pct: float
+
+
+class UserSettingsRequest(BaseModel):
+    ebay_store_level: str | None = None
+    is_top_rated_seller: bool | None = None
+    default_promoted_rate: float | None = None
+    default_sales_tax_rate: float | None = None
+    default_fee_category: str | None = None
+
+    @field_validator("ebay_store_level")
+    @classmethod
+    def validate_store_level(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        valid = {"none", "starter", "basic", "premium", "anchor", "enterprise"}
+        if v.lower() not in valid:
+            raise ValueError(f"ebay_store_level must be one of {valid}")
+        return v.lower()
+
+
+class UserSettingsResponse(BaseModel):
+    ebay_store_level: str
+    is_top_rated_seller: bool
+    default_promoted_rate: float
+    default_sales_tax_rate: float
+    default_fee_category: str

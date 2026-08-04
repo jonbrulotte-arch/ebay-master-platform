@@ -11,6 +11,7 @@ from app.models.listing import Listing
 from app.models.order import Order
 from app.models.order_line_item import OrderLineItem
 from app.models.product import Product
+from app.models.user import User
 from app.services.ebay_service import get_ebay_client
 
 
@@ -124,6 +125,18 @@ async def sync_orders_for_user(db: AsyncSession, user_id: uuid.UUID) -> dict:
                     total_price=unit_price * quantity,
                 )
                 db.add(line_item)
+                await db.flush()
+
+                # Create actual profitability record for new line items with a product
+                if product_id:
+                    user_result = await db.execute(select(User).where(User.id == user_id))
+                    user = user_result.scalar_one_or_none()
+                    user_settings = user.settings if user else None
+                    try:
+                        from app.services.profitability_service import create_actual_record
+                        await create_actual_record(db, line_item, user_settings)
+                    except Exception:
+                        pass
         else:
             # Update existing order status
             order.order_status = ebay_order.get("orderFulfillmentStatus", order.order_status)
